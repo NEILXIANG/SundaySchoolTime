@@ -38,9 +38,42 @@ const schema = {
 
 log.debug('Store schema defined:', JSON.stringify(schema, null, 2));
 
-const store = new Store({ schema });
-log.info('Store initialized, path:', store.path);
-log.debug('Store size:', store.size, 'items');
+let store;
+
+try {
+  store = new Store({ schema });
+  log.info('Store initialized, path:', store.path);
+  log.debug('Store size:', store.size, 'items');
+} catch (error) {
+  log.error('Failed to initialize electron-store:', error);
+  log.info('Attempting to recover by resetting configuration...');
+  
+  try {
+    const { app } = require('electron');
+    const fs = require('fs');
+    const path = require('path');
+    
+    // 默认路径通常是 userData 下的 config.json
+    // 注意：如果在测试环境或自定义了 cwd，这里可能需要调整
+    const userDataPath = app.getPath('userData');
+    const configPath = path.join(userDataPath, 'config.json');
+    
+    if (fs.existsSync(configPath)) {
+      const backupPath = `${configPath}.corrupted.${Date.now()}.bak`;
+      fs.renameSync(configPath, backupPath);
+      log.warn(`Corrupted config moved to: ${backupPath}`);
+    }
+    
+    // 再次尝试初始化，将使用默认值创建新文件
+    store = new Store({ schema });
+    log.info('Store recovered successfully');
+  } catch (retryError) {
+    log.error('Critical: Failed to recover store:', retryError);
+    // 最后的手段：创建一个内存中的 store polyfill 或者再次抛出
+    // 为了防止应用完全无法启动，我们可以抛出更明确的错误
+    throw new Error(`Critical Store Initialization Failure: ${retryError.message}`);
+  }
+}
 
 // 保存窗口状态
 function saveWindowState(window) {

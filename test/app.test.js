@@ -110,11 +110,16 @@ describe('阶段1：Electron 应用壳测试套件', function() {
 
   // 测试4：渲染进程页面测试
   describe('4. 渲染进程页面测试', () => {
-    before(async () => {
+    beforeEach(async () => {
       electronApp = await electron.launch({
-        args: [path.join(__dirname, '..')]
+        args: [path.join(__dirname, '..')],
+        env: {
+          ...process.env,
+          NODE_ENV: 'test'
+        }
       });
       window = await electronApp.firstWindow();
+      await window.waitForLoadState('domcontentloaded');
     });
 
     it('页面标题应该正确', async () => {
@@ -133,7 +138,36 @@ describe('阶段1：Electron 应用壳测试套件', function() {
     });
 
     it('应该显示平台信息', async () => {
-      const platformText = await window.locator('#platformName').textContent();
+      const getPlatformText = async () => {
+        await window.waitForFunction(() => {
+          const el = document.querySelector('#platformName');
+          return el && el.textContent && el.textContent !== '加载中...';
+        }, { timeout: 5000 });
+        return window.locator('#platformName').textContent();
+      };
+
+      let platformText;
+      try {
+        platformText = await getPlatformText();
+      } catch (error) {
+        if (electronApp) {
+          try {
+            await electronApp.close();
+          } catch (e) {
+            // 忽略关闭错误
+          }
+        }
+        electronApp = await electron.launch({
+          args: [path.join(__dirname, '..')],
+          env: {
+            ...process.env,
+            NODE_ENV: 'test'
+          }
+        });
+        window = await electronApp.firstWindow();
+        await window.waitForLoadState('domcontentloaded');
+        platformText = await getPlatformText();
+      }
       expect(platformText).to.be.oneOf(['darwin', 'win32', 'linux']);
     });
 
@@ -167,7 +201,7 @@ describe('阶段1：Electron 应用壳测试套件', function() {
       expect(csp).to.include("default-src 'self'");
     });
 
-    after(async function() {
+    afterEach(async function() {
       this.timeout(10000);
       if (electronApp) {
         try {

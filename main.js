@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const log = require('electron-log');
 const { autoUpdater } = require('electron-updater');
@@ -9,6 +9,9 @@ const { saveWindowState, restoreWindowState, getPreferences } = require('./store
 // 环境变量
 const isDev = process.env.NODE_ENV === 'development';
 const isMac = process.platform === 'darwin';
+
+// 初始化日志系统
+log.initialize();
 
 // 配置日志
 log.transports.file.level = isDev ? 'debug' : 'info';
@@ -64,6 +67,29 @@ process.on('unhandledRejection', (reason, promise) => {
   }
 });
 
+// 监听子进程崩溃事件
+app.on('render-process-gone', (event, webContents, details) => {
+  log.error(`Renderer process gone: ${details.reason}, exitCode: ${details.exitCode}`);
+  log.error(`WebContents ID: ${webContents.id}, URL: ${webContents.getURL()}`);
+});
+
+app.on('child-process-gone', (event, details) => {
+  log.error(`Child process gone: ${details.type}, reason: ${details.reason}, exitCode: ${details.exitCode}`);
+  // 如果是 GPU 进程崩溃，通常 Electron 会自动重启，但服务进程可能需要手动处理
+  if (details.type === 'Utility' || details.type === 'Zygote') {
+    log.warn('Critical child process crashed');
+  }
+});
+
+// 处理来自渲染进程的日志
+ipcMain.on('log-message', (event, level, message, ...args) => {
+  if (log[level]) {
+    log[level](`[Renderer] ${message}`, ...args);
+  } else {
+    log.info(`[Renderer] ${message}`, ...args);
+  }
+});
+
 function createWindow() {
   log.info('------- Creating Main Window -------');
   log.debug('Function: createWindow() started');
@@ -92,6 +118,17 @@ function createWindow() {
   mainWindow = new BrowserWindow(windowOptions);
   log.info('BrowserWindow instance created');
 
+  // 监听来自渲染进程的所有 IPC 消息，用于调试
+  mainWindow.webContents.on('ipc-message', (event, channel, ...args) => {
+    // 过滤掉频繁的消息
+    if (channel !== 'ping') {
+        log.debug(`IPC Message received: [${channel}]`, args);
+    }
+  });
+
+  // 监听渲染进程的控制台输出 (如果是旧版 API 或者通过特定方式)
+  // 注意：electron-log 会自动处理 renderer 日志，如果我们正确配置了
+  
   // 恢复窗口状态
   log.debug('Restoring window state...');
   restoreWindowState(mainWindow);

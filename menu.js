@@ -3,7 +3,8 @@ const { app } = require('electron');
 const log = require('electron-log');
 
 function createMenu(mainWindow) {
-  const isMac = process.platform === 'darwin';
+  try {
+    const isMac = process.platform === 'darwin';
 
   const template = [
     // macOS 应用菜单
@@ -87,15 +88,15 @@ function createMenu(mainWindow) {
     {
       label: '查看',
       submenu: [
-        { role: 'reload', label: '重新加载' },
-        { role: 'forceReload', label: '强制重新加载' },
-        { role: 'toggleDevTools', label: '开发者工具' },
+        { role: 'reload', label: '重新加载', click: () => log.info('Menu Action: Reload') },
+        { role: 'forceReload', label: '强制重新加载', click: () => log.info('Menu Action: Force Reload') },
+        { role: 'toggleDevTools', label: '开发者工具', click: () => log.info('Menu Action: Toggle DevTools') },
         { type: 'separator' },
-        { role: 'resetZoom', label: '实际大小' },
-        { role: 'zoomIn', label: '放大' },
-        { role: 'zoomOut', label: '缩小' },
+        { role: 'resetZoom', label: '实际大小', click: () => log.debug('Menu Action: Reset Zoom') },
+        { role: 'zoomIn', label: '放大', click: () => log.debug('Menu Action: Zoom In') },
+        { role: 'zoomOut', label: '缩小', click: () => log.debug('Menu Action: Zoom Out') },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: '切换全屏' }
+        { role: 'togglefullscreen', label: '切换全屏', click: () => log.info('Menu Action: Toggle Fullscreen') }
       ]
     },
 
@@ -166,6 +167,10 @@ function createMenu(mainWindow) {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
   log.info('Application menu created');
+  } catch (error) {
+    log.error('Failed to create menu:', error);
+    throw error;
+  }
 }
 
 module.exports = {

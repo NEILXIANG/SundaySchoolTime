@@ -5,14 +5,16 @@ const log = require('electron-log');
 let tray = null;
 
 function createTray(mainWindow) {
-  // 暂时使用空图标，待图标文件准备好后替换
-  const icon = nativeImage.createEmpty();
-  tray = new Tray(icon);
+  try {
+    // 暂时使用空图标，待图标文件准备好后替换
+    const icon = nativeImage.createEmpty();
+    tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '显示窗口',
       click: () => {
+        log.debug('Tray Action: Show Window');
         if (mainWindow) {
           mainWindow.show();
           mainWindow.focus();
@@ -22,6 +24,7 @@ function createTray(mainWindow) {
     {
       label: '隐藏窗口',
       click: () => {
+        log.debug('Tray Action: Hide Window');
         if (mainWindow) {
           mainWindow.hide();
         }
@@ -62,13 +65,21 @@ function createTray(mainWindow) {
 
   log.info('Tray created');
   return tray;
+  } catch (error) {
+    log.error('Failed to create tray:', error);
+    throw error;
+  }
 }
 
 function destroyTray() {
-  if (tray) {
-    tray.destroy();
-    tray = null;
-    log.info('Tray destroyed');
+  try {
+    if (tray) {
+      tray.destroy();
+      tray = null;
+      log.info('Tray destroyed');
+    }
+  } catch (error) {
+    log.error('Failed to destroy tray:', error);
   }
 }
 
