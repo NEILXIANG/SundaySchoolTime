@@ -5,3 +5,19 @@ yarn-debug.log*
 yarn-error.log*
 dist
 *.log
+
+# Coverage reports
+coverage
+.nyc_output
+
+# IDE
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db

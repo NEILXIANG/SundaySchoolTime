@@ -9,13 +9,34 @@
     "build": "electron-builder",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
     "test": "mocha test/**/*.test.js --timeout 30000",
-    "test:watch": "mocha test/**/*.test.js --timeout 30000 --watch"
+    "test:watch": "mocha test/**/*.test.js --timeout 30000 --watch",
+    "test:coverage": "nyc npm test",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md}\""
   },
   "keywords": [
-    "electron"
+    "electron",
+    "education",
+    "sunday-school",
+    "content-distribution"
   ],
-  "author": "",
+  "author": {
+    "name": "Neil Xiang",
+    "email": "neil@example.com",
+    "url": "https://github.com/NEILXIANG"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NEILXIANG/SundaySchoolTime.git"
+  },
+  "bugs": {
+    "url": "https://github.com/NEILXIANG/SundaySchoolTime/issues"
+  },
+  "homepage": "https://github.com/NEILXIANG/SundaySchoolTime#readme",
   "license": "MIT",
   "devDependencies": {
     "chai": "^4.3.10",
@@ -23,11 +44,16 @@
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
     "electron-reloader": "^1.2.3",
+    "eslint": "^8.56.0",
     "mocha": "^10.2.0",
-    "playwright": "^1.40.0"
+    "nyc": "^15.1.0",
+    "playwright": "^1.40.0",
+    "prettier": "^3.1.1"
   },
   "dependencies": {
-    "electron-log": "^5.0.1"
+    "electron-log": "^5.0.1",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.1.7"
   },
   "build": {
     "appId": "com.neilxiang.sundayschooltime",
@@ -43,10 +69,26 @@
     ],
     "mac": {
       "category": "public.app-category.education",
-      "target": "dmg"
+      "target": "dmg",
+      "icon": "assets/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "icon": "assets/icon.png",
+      "category": "Education"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "NEILXIANG",
+      "repo": "SundaySchoolTime"
     }
   }
 }
