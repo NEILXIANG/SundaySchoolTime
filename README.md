@@ -1,4 +1,4 @@
-# MSS - 教师学生图文分发工具
+# SundaySchoolTime - 教师学生图文分发工具
 
 ## 阶段 1：Electron 应用壳
 
@@ -7,7 +7,7 @@
 ### 项目结构
 
 ```
-MSS/
+SundaySchoolTime/
 ├── package.json          # 项目配置
 ├── main.js              # 主进程（创建窗口）
 ├── preload.js           # 预加载脚本（安全 IPC）
@@ -15,6 +15,8 @@ MSS/
 ├── test/                # 测试文件
 │   ├── app.test.js     # 集成测试
 │   └── unit.test.js    # 单元测试
+├── .gitignore           # Git 忽略配置
+├── LICENSE              # MIT 许可证
 └── README.md            # 项目说明
 ```
 
@@ -26,10 +28,35 @@ MSS/
 npm install
 ```
 
-#### 启动应用
+#### 启动应用（生产模式）
 
 ```bash
 npm start
+```
+
+#### 启动应用（开发模式）
+
+开发模式会自动打开 DevTools 并启用热重载：
+
+```bash
+npm run dev
+```
+
+#### 构建应用
+
+构建所有平台：
+```bash
+npm run build
+```
+
+仅构建 macOS：
+```bash
+npm run build:mac
+```
+
+仅构建 Windows：
+```bash
+npm run build:win
 ```
 
 #### 运行测试
@@ -113,9 +140,15 @@ npm test
 - ✅ 主进程、渲染进程、preload 分离
 - ✅ Context Isolation 启用（安全）
 - ✅ Node Integration 禁用（安全）
+- ✅ Sandbox 模式启用（安全）
 - ✅ 安全的 IPC 通信架构
 - ✅ 无外部框架依赖
 - ✅ 生产级代码质量
+- ✅ 日志系统（electron-log）
+- ✅ 开发模式热重载
+- ✅ DevTools 自动打开（开发模式）
+- ✅ 全局错误处理
+- ✅ 应用打包构建
 
 ### 技术栈
 
@@ -123,6 +156,15 @@ npm test
 - **测试框架**: Mocha
 - **断言库**: Chai
 - **E2E 测试**: Playwright
+- **日志系统**: electron-log
+- **构建工具**: electron-builder
+- **热重载**: electron-reloader
+
+### 日志文件位置
+
+- **macOS**: `~/Library/Logs/SundaySchoolTime/main.log`
+- **Windows**: `%USERPROFILE%\AppData\Roaming\SundaySchoolTime\logs\main.log`
+- **Linux**: `~/.config/SundaySchoolTime/logs/main.log`
 
 ### 验证清单
 
