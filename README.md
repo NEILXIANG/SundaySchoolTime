@@ -203,6 +203,10 @@ SundaySchoolTime/
 ├── test/                # 测试文件
 │   ├── app.test.js      # E2E 测试
 │   └── unit.test.js     # 单元测试
+├── scripts/             # 工具脚本
+│   └── analyze-logs.js  # 日志分析工具
+├── docs/                # 文档
+│   └── LOGGING.md       # 日志系统说明
 ├── main.js              # 主进程入口
 ├── preload.js           # Preload 脚本
 ├── index.html           # 渲染进程 UI
@@ -246,6 +250,10 @@ npm run lint:fix
 # 代码格式化
 npm run format
 npm run format:check
+
+# 日志分析
+npm run logs              # 分析最新日志
+npm run logs:open         # 打开日志目录
 
 # 构建应用
 npm run build          # 所有平台

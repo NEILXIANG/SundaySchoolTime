@@ -16,7 +16,9 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{js,json,md}\"",
-    "format:check": "prettier --check \"**/*.{js,json,md}\""
+    "format:check": "prettier --check \"**/*.{js,json,md}\"",
+    "logs": "node scripts/analyze-logs.js",
+    "logs:open": "open ~/Library/Logs/SundaySchoolTime || explorer %USERPROFILE%\\AppData\\Roaming\\SundaySchoolTime\\logs || xdg-open ~/.config/SundaySchoolTime/logs"
   },
   "keywords": [
     "electron",
