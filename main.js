@@ -6,6 +6,10 @@ const { createMenu } = require('./menu');
 const { createTray, destroyTray } = require('./tray');
 const { saveWindowState, restoreWindowState, getPreferences } = require('./store');
 
+// 环境变量
+const isDev = process.env.NODE_ENV === 'development';
+const isMac = process.platform === 'darwin';
+
 // 配置日志
 log.transports.file.level = isDev ? 'debug' : 'info';
 log.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
@@ -21,9 +25,6 @@ log.transports.file.resolvePath = () => {
 };
 
 autoUpdater.logger = log;
-
-const isDev = process.env.NODE_ENV === 'development';
-const isMac = process.platform === 'darwin';
 
 let mainWindow;
 let tray = null;
