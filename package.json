@@ -1,0 +1,22 @@
+{
+  "name": "mss-electron-app",
+  "version": "1.0.0",
+  "description": "教师学生图文分发工具 - Electron 桌面应用",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "mocha test/**/*.test.js --timeout 30000",
+    "test:watch": "mocha test/**/*.test.js --timeout 30000 --watch"
+  },
+  "keywords": [
+    "electron"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "chai": "^4.3.10",
+    "electron": "^28.0.0",
+    "mocha": "^10.2.0",
+    "playwright": "^1.40.0"
+  }
+}
