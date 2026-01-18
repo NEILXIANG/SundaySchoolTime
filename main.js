@@ -5,6 +5,7 @@ const { autoUpdater } = require('electron-updater');
 const { createMenu } = require('./menu');
 const { createTray, destroyTray } = require('./tray');
 const { saveWindowState, restoreWindowState, getPreferences } = require('./store');
+const db = require('./db');
 
 // 环境变量
 const isDev = process.env.NODE_ENV === 'development';
@@ -192,9 +193,17 @@ function createWindow() {
   // 窗口事件监听
   mainWindow.on('closed', () => {
     log.info('Event: window closed');
-    saveWindowState(mainWindow);
+    // 注意：窗口关闭时已无法调用 getBounds()，状态在 close 之前保存
     mainWindow = null;
     log.debug('mainWindow set to null');
+  });
+
+  // 在窗口关闭前保存状态
+  mainWindow.on('close', () => {
+    log.debug('Event: window close (before closed)');
+    if (mainWindow) {
+      saveWindowState(mainWindow);
+    }
   });
 
   mainWindow.on('blur', () => {
@@ -287,7 +296,74 @@ app.whenReady().then(() => {
   log.info('Event: app ready');
   log.info('App version:', app.getVersion());
   log.info('Ready time:', new Date().toISOString());
-  
+
+  // 初始化数据库
+  try {
+    db.initDb();
+    log.info('Database initialized successfully');
+  } catch (error) {
+    log.error('Failed to initialize database:', error);
+  }
+
+  // 注册 IPC 处理程序 (Database)
+  const allowedDbMethods = new Set([
+    'addStudent', 'listStudents', 'countStudents', 'searchStudents', 'getStudentById', 'updateStudent', 'deleteStudent',
+    'addPhoto', 'listPhotos', 'countPhotos', 'searchPhotos', 'getPhotoById', 'updatePhoto', 'deletePhoto',
+    'linkStudentPhoto', 'unlinkStudentPhoto', 'listPhotosByStudent', 'listStudentsByPhoto',
+    'addMessageRecord', 'getMessageRecordById', 'listMessageRecords', 'backupDatabase'
+  ]);
+
+  ipcMain.handle('db:call', async (event, method, ...args) => {
+    try {
+      // 限制参数数量，防止滥用
+      if (args.length > 10) {
+        throw new Error('Too many arguments');
+      }
+      
+      // 限制单个参数大小（对象/数组）
+      const argSize = JSON.stringify(args).length;
+      if (argSize > 1024 * 1024) { // 1MB
+        throw new Error('Argument size too large');
+      }
+      
+      if (!allowedDbMethods.has(method)) {
+        throw new Error(`Method ${method} is not allowed`);
+      }
+
+      // 参数类型验证
+      if (method === 'addStudent' && args.length > 0) {
+        const student = args[0];
+        if (typeof student !== 'object' || !student.name || typeof student.name !== 'string') {
+          throw new Error('Invalid student data: name is required and must be string');
+        }
+      }
+      
+      if ((method === 'listStudents' || method === 'searchStudents' || method === 'listPhotos') && args.length > 0) {
+        const options = args[0];
+        if (typeof options === 'object') {
+          if (options.limit !== undefined && (typeof options.limit !== 'number' || options.limit < 0)) {
+            throw new Error('Invalid limit: must be non-negative number');
+          }
+          if (options.offset !== undefined && (typeof options.offset !== 'number' || options.offset < 0)) {
+            throw new Error('Invalid offset: must be non-negative number');
+          }
+        }
+      }
+
+      if (typeof db[method] === 'function') {
+        log.debug(`IPC Call: db.${method}`, args);
+        // 大部分 db 操作是同步的，但通过 invoke 调用 wrap 成 promise
+        const result = db[method](...args);
+        return { success: true, data: result };
+      } else {
+        throw new Error(`Method ${method} not found in db module`);
+      }
+    } catch (error) {
+      log.error(`IPC Call failed: db.${method}`, error);
+      return { success: false, error: error.message };
+    }
+  });
+
   log.debug('Calling createWindow()...');
   createWindow();
 
@@ -310,19 +386,12 @@ app.whenReady().then(() => {
   });
 });
 
-// 自动更新配置
-function checkForUpdates() {
-  log.info('------- Auto-Update Check -------');
-  log.debug('Calling autoUpdater.checkForUpdatesAndNotify()...');
-  
-  autoUpdater.checkForUpdatesAndNotify()
-    .then(() => {
-      log.debug('Update check initiated successfully');
-    })
-    .catch((error) => {
-      log.error('Update check failed:', error);
-      log.error('Error stack:', error.stack);
-    });
+// 自动更新配置 - 事件监听器在模块顶层注册，避免重复
+let autoUpdaterInitialized = false;
+
+function setupAutoUpdaterEvents() {
+  if (autoUpdaterInitialized) return;
+  autoUpdaterInitialized = true;
 
   autoUpdater.on('checking-for-update', () => {
     log.info('AutoUpdater: checking for update...');
@@ -356,8 +425,26 @@ function checkForUpdates() {
     log.error('Error message:', error.message);
     log.error('Error stack:', error.stack);
   });
-  
+
   log.debug('AutoUpdater event listeners registered');
+}
+
+function checkForUpdates() {
+  log.info('------- Auto-Update Check -------');
+  
+  // 确保事件监听器只注册一次
+  setupAutoUpdaterEvents();
+  
+  log.debug('Calling autoUpdater.checkForUpdatesAndNotify()...');
+  
+  autoUpdater.checkForUpdatesAndNotify()
+    .then(() => {
+      log.debug('Update check initiated successfully');
+    })
+    .catch((error) => {
+      log.error('Update check failed:', error);
+      log.error('Error stack:', error.stack);
+    });
 }
 
 app.on('window-all-closed', () => {
@@ -365,7 +452,9 @@ app.on('window-all-closed', () => {
   log.debug('Platform:', process.platform);
   
   if (mainWindow) {
-    log.debug('Saving window state before cleanup...');
+    log.debug('Flushing and saving window state before cleanup...');
+    const { flushWindowState } = require('./store');
+    flushWindowState();
     saveWindowState(mainWindow);
   }
   
@@ -388,6 +477,8 @@ app.on('before-quit', (event) => {
 
 app.on('will-quit', (event) => {
   log.info('Event: will-quit');
+  db.closeDb();
+  log.debug('Database connection closed');
   log.debug('Application will quit, final cleanup');
 });
 

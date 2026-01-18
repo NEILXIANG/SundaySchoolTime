@@ -53,9 +53,11 @@
     "prettier": "^3.1.1"
   },
   "dependencies": {
+    "better-sqlite3": "^9.4.5",
     "electron-log": "^5.0.1",
     "electron-store": "^8.1.0",
-    "electron-updater": "^6.1.7"
+    "electron-updater": "^6.1.7",
+    "mime-types": "^3.0.2"
   },
   "build": {
     "appId": "com.neilxiang.sundayschooltime",
@@ -82,7 +84,10 @@
       "icon": "assets/icon.ico"
     },
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "icon": "assets/icon.png",
       "category": "Education"
     },

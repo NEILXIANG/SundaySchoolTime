@@ -428,4 +428,89 @@ describe('阶段1：Electron 应用壳测试套件', function() {
       expect(elementCount).to.be.greaterThan(5);
     });
   });
+
+  describe('11. WebContents 事件监控', () => {
+    beforeEach(async () => {
+      if (!electronApp || !electronApp.isConnected || !electronApp.isConnected()) {
+        electronApp = await electron.launch({
+          args: [path.join(__dirname, '..')],
+          env: { ...process.env, NODE_ENV: 'test' }
+        });
+      }
+    });
+
+    it('应该监听 did-finish-load 事件', async () => {
+      const window = await electronApp.firstWindow();
+      await window.waitForLoadState('domcontentloaded');
+      
+      // 验证页面已成功加载（did-finish-load 事件触发）
+      const isLoaded = await window.evaluate(() => {
+        return document.readyState === 'complete' || document.readyState === 'interactive';
+      });
+      
+      expect(isLoaded).to.be.true;
+    });
+
+    it('应该监听 console-message 事件', async () => {
+      const window = await electronApp.firstWindow();
+      
+      // 触发各种级别的控制台消息
+      await window.evaluate(() => {
+        console.log('Test log message');
+        console.info('Test info message');
+        console.warn('Test warning message');
+        console.error('Test error message');
+      });
+      
+      // 验证应用未因控制台消息而崩溃
+      const isStillRunning = await electronApp.evaluate(() => true);
+      expect(isStillRunning).to.be.true;
+    });
+
+    it('应该处理渲染器中的 debug 级别消息', async () => {
+      const window = await electronApp.firstWindow();
+      
+      await window.evaluate(() => {
+        console.debug('Debug level message');
+      });
+      
+      const isStillRunning = await electronApp.evaluate(() => true);
+      expect(isStillRunning).to.be.true;
+    });
+  });
+
+  describe('12. 全局错误处理器', () => {
+    beforeEach(async () => {
+      if (!electronApp || !electronApp.isConnected || !electronApp.isConnected()) {
+        electronApp = await electron.launch({
+          args: [path.join(__dirname, '..')],
+          env: { ...process.env, NODE_ENV: 'test' }
+        });
+      }
+    });
+
+    it('主进程应该注册 uncaughtException 处理器', async () => {
+      const hasErrorHandler = await electronApp.evaluate(() => {
+        return process.listenerCount('uncaughtException') > 0;
+      });
+      
+      expect(hasErrorHandler).to.be.true;
+    });
+
+    it('主进程应该注册 unhandledRejection 处理器', async () => {
+      const hasRejectionHandler = await electronApp.evaluate(() => {
+        return process.listenerCount('unhandledRejection') > 0;
+      });
+      
+      expect(hasRejectionHandler).to.be.true;
+    });
+
+    it('应该监听渲染进程崩溃事件', async () => {
+      const hasCrashListener = await electronApp.evaluate(({ app }) => {
+        return app.listenerCount('render-process-gone') > 0;
+      });
+      
+      expect(hasCrashListener).to.be.true;
+    });
+  });
 });

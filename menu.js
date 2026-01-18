@@ -5,6 +5,7 @@ const log = require('electron-log');
 function createMenu(mainWindow) {
   try {
     const isMac = process.platform === 'darwin';
+    const isDev = process.env.NODE_ENV === 'development';
 
   const template = [
     // macOS 应用菜单
@@ -36,7 +37,24 @@ function createMenu(mainWindow) {
           accelerator: 'CmdOrCtrl+O',
           click: () => {
             log.info('Open file menu clicked');
-            // 实现打开文件功能
+            // 触发文件对话框
+            const { dialog } = require('electron');
+            dialog.showOpenDialog(mainWindow, {
+              title: '选择照片',
+              filters: [
+                { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'] },
+                { name: '所有文件', extensions: ['*'] }
+              ],
+              properties: ['openFile', 'multiSelections']
+            }).then(result => {
+              if (!result.canceled && result.filePaths.length > 0) {
+                // 发送文件路径到渲染进程，由渲染进程处理导入
+                mainWindow.webContents.send('files-selected', result.filePaths);
+                log.info('Files selected:', result.filePaths);
+              }
+            }).catch(err => {
+              log.error('File dialog error:', err);
+            });
           }
         },
         {
@@ -90,7 +108,8 @@ function createMenu(mainWindow) {
       submenu: [
         { role: 'reload', label: '重新加载', click: () => log.info('Menu Action: Reload') },
         { role: 'forceReload', label: '强制重新加载', click: () => log.info('Menu Action: Force Reload') },
-        { role: 'toggleDevTools', label: '开发者工具', click: () => log.info('Menu Action: Toggle DevTools') },
+        // 生产环境隐藏开发者工具，防止误用
+        ...(isDev ? [{ role: 'toggleDevTools', label: '开发者工具', click: () => log.info('Menu Action: Toggle DevTools') }] : []),
         { type: 'separator' },
         { role: 'resetZoom', label: '实际大小', click: () => log.debug('Menu Action: Reset Zoom') },
         { role: 'zoomIn', label: '放大', click: () => log.debug('Menu Action: Zoom In') },

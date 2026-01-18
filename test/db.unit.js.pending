@@ -1,0 +1,165 @@
+const { expect } = require('chai');
+const fs = require('fs');
+const path = require('path');
+const db = require('../db');
+
+describe('Database Module Unit Tests', function() {
+  const testDataPath = path.join(process.cwd(), 'data');
+  const testDbPath = path.join(testDataPath, 'sunday-school-time.db');
+  
+  // Cleanup helper
+  const cleanup = () => {
+    try {
+      db.closeDb();
+      if (fs.existsSync(testDataPath)) {
+        fs.rmSync(testDataPath, { recursive: true, force: true });
+      }
+    } catch (e) {
+      console.warn('Cleanup warning:', e.message);
+    }
+  };
+
+  beforeEach(() => {
+    cleanup();
+    // Re-initialize DB
+    db.initDb();
+  });
+
+  after(() => {
+    cleanup();
+  });
+
+  describe('Student CRUD', () => {
+    it('should add a student and retrieve by ID', () => {
+      const student = {
+        name: 'Test Student',
+        className: 'Class A',
+        guardianName: 'Parent',
+        phone: '123456'
+      };
+      
+      const id = db.addStudent(student);
+      expect(id).to.be.a('number');
+
+      const saved = db.getStudentById(id);
+      expect(saved.name).to.equal(student.name);
+      expect(saved.guardianName).to.equal(student.guardianName);
+      expect(saved.createdAt).to.be.a('number');
+    });
+
+    it('should list all students', () => {
+      db.addStudent({ name: 'S1' });
+      db.addStudent({ name: 'S2' });
+      const list = db.listStudents();
+      expect(list).to.have.lengthOf(2);
+      // Ordered by createdAt DESC
+      expect(list[0].name).to.equal('S2');
+    });
+
+    it('should update student details', () => {
+      const id = db.addStudent({ name: 'Original' });
+      const changes = db.updateStudent(id, { name: 'Updated', className: 'New Class' });
+      expect(changes).to.equal(1);
+      
+      const updated = db.getStudentById(id);
+      expect(updated.name).to.equal('Updated');
+    });
+
+    it('should delete a student', () => {
+      const id = db.addStudent({ name: 'To Delete' });
+      db.deleteStudent(id);
+      const missing = db.getStudentById(id);
+      expect(missing).to.be.undefined;
+    });
+
+    it('should validate required fields', () => {
+      expect(() => db.addStudent({ name: '' })).to.throw('Student name is required');
+    });
+  });
+
+  describe('Photo CRUD & Local Import', () => {
+    const tempFn = 'temp-import-test.jpg';
+    let tempFilePath;
+
+    before(() => {
+        // Create a fake source file outside the data dir
+        tempFilePath = path.join(process.cwd(), tempFn);
+        fs.writeFileSync(tempFilePath, 'fake image content');
+    });
+
+    after(() => {
+        if (fs.existsSync(tempFilePath)) fs.unlinkSync(tempFilePath);
+    });
+
+    it('should import photo and copy it to local storage', () => {
+      const id = db.addPhoto({ filePath: tempFilePath, fileName: 'MyPhoto.jpg' });
+      const photo = db.getPhotoById(id);
+      
+      expect(photo.filePath).to.not.equal(tempFilePath);
+      expect(photo.filePath).to.include(path.join('data', 'photos'));
+      expect(fs.existsSync(photo.filePath)).to.be.true;
+    });
+
+    it('should normalize result timestamps', () => {
+        // Pass seconds, expect millis conversion
+        const seconds = 1700000000;
+        const id = db.addPhoto({ filePath: tempFilePath, capturedAt: seconds });
+        const photo = db.getPhotoById(id);
+        expect(photo.capturedAt).to.equal(seconds * 1000);
+    });
+  });
+
+  describe('Relationships (StudentPhoto)', () => {
+    it('should link student and photo', () => {
+        const sId = db.addStudent({ name: 'S1' });
+        const pId = db.addPhoto({ filePath: 'dummy/path/1', fileName: 'f1' });
+        
+        db.linkStudentPhoto(sId, pId);
+        
+        const photos = db.listPhotosByStudent(sId);
+        expect(photos).to.have.lengthOf(1);
+        expect(photos[0].id).to.equal(pId);
+    });
+
+    it('should prevent duplicate linking', () => {
+        const sId = db.addStudent({ name: 'S1' });
+        const pId = db.addPhoto({ filePath: 'dummy/path/2', fileName: 'f2' });
+        
+        db.linkStudentPhoto(sId, pId);
+        db.linkStudentPhoto(sId, pId); // Should ignore
+        
+        const photos = db.listPhotosByStudent(sId);
+        expect(photos).to.have.lengthOf(1);
+    });
+
+    it('should cascade delete when student is deleted', () => {
+        const sId = db.addStudent({ name: 'S1' });
+        const pId = db.addPhoto({ filePath: 'dummy/path/3', fileName: 'f3' });
+        db.linkStudentPhoto(sId, pId);
+        
+        db.deleteStudent(sId);
+        // Relationship should satisfy foreign key constraint
+        // We can verify by checking the join table directly or using list
+        
+        // However, listPhotosByStudent relies on StudentPhoto table.
+        // If row deleted from StudentPhoto, list returns empty.
+        const photos = db.listPhotosByStudent(sId);
+        expect(photos).to.have.lengthOf(0);
+    });
+  });
+
+  describe('MessageRecord', () => {
+      it('should add log record', () => {
+          const sId = db.addStudent({ name: 'S1' });
+          const mId = db.addMessageRecord({
+              studentId: sId,
+              templateText: 'Tpl',
+              finalText: 'Final',
+              channel: 'wechat'
+          });
+          
+          const record = db.getMessageRecordById(mId);
+          expect(record.channel).to.equal('wechat');
+      });
+  });
+});

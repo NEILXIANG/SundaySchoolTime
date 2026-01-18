@@ -3,34 +3,8 @@
   "configurations": [
     {
       "name": "Electron: Main",
-      "type": "node",
+      "type": "pwa-node",
       "request": "launch",
-      "protocol": "inspector",
-      "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
-      "runtimeArgs": ["--remote-debugging-port=9223", "."],
-      "windows": {
-        "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron.cmd"
-      },
-      "env": {
-        "NODE_ENV": "development"
-      },
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "outputCapture": "std"
-    },
-    {
-      "name": "Electron: Renderer",
-      "type": "chrome",
-      "request": "attach",
-      "port": 9223,
-      "webRoot": "${workspaceFolder}",
-      "timeout": 30000
-    },
-    {
-      "name": "Electron: All",
-      "type": "node",
-      "request": "launch",
-      "protocol": "inspector",
       "runtimeExecutable": "${workspaceFolder}/node_modules/.bin/electron",
       "runtimeArgs": ["--remote-debugging-port=9223", "."],
       "windows": {
@@ -42,7 +16,15 @@
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "outputCapture": "std",
-      "preLaunchTask": "npm: dev"
+      "autoAttachChildProcesses": true
+    },
+    {
+      "name": "Electron: Renderer",
+      "type": "pwa-chrome",
+      "request": "attach",
+      "port": 9223,
+      "webRoot": "${workspaceFolder}",
+      "timeout": 30000
     }
   ],
   "compounds": [

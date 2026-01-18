@@ -1,13 +1,26 @@
 const { Menu, Tray, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const log = require('electron-log');
 
 let tray = null;
 
 function createTray(mainWindow) {
   try {
-    // 暂时使用空图标，待图标文件准备好后替换
-    const icon = nativeImage.createEmpty();
+    // 尝试加载真实图标，如果失败则使用占位符
+    let icon;
+    const iconPath = path.join(__dirname, 'assets', 'icon.png');
+    
+    if (fs.existsSync(iconPath)) {
+      icon = nativeImage.createFromPath(iconPath);
+      log.info('Loaded tray icon from:', iconPath);
+    } else {
+      // 使用内置的1x1 PNG 占位符
+      const iconDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/6X2s3sAAAAASUVORK5CYII=';
+      icon = nativeImage.createFromDataURL(iconDataUrl);
+      log.warn('Icon file not found, using placeholder');
+    }
+    
     tray = new Tray(icon);
 
   const contextMenu = Menu.buildFromTemplate([
@@ -34,8 +47,15 @@ function createTray(mainWindow) {
     {
       label: '关于',
       click: () => {
-        // 显示关于对话框
-        log.info('Show about dialog');
+        log.info('Tray: Show about dialog');
+        const { app, dialog } = require('electron');
+        dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: '关于SundaySchoolTime',
+          message: 'SundaySchoolTime',
+          detail: `版本: ${app.getVersion()}\n教师学生图文分发工具\n\n© 2026 Neil Xiang`,
+          buttons: ['确定']
+        });
       }
     },
     { type: 'separator' },

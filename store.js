@@ -1,5 +1,6 @@
 const Store = require('electron-store');
 const log = require('electron-log');
+const { screen } = require('electron');
 
 log.debug('Initializing electron-store...');
 
@@ -40,6 +41,18 @@ log.debug('Store schema defined:', JSON.stringify(schema, null, 2));
 
 let store;
 
+function sanitizePreferences(prefs = {}) {
+  const defaults = schema.preferences.default;
+  const result = { ...defaults, ...prefs };
+
+  result.showTrayIcon = typeof result.showTrayIcon === 'boolean' ? result.showTrayIcon : defaults.showTrayIcon;
+  result.autoUpdate = typeof result.autoUpdate === 'boolean' ? result.autoUpdate : defaults.autoUpdate;
+  result.theme = typeof result.theme === 'string' ? result.theme : defaults.theme;
+  result.language = typeof result.language === 'string' ? result.language : defaults.language;
+
+  return result;
+}
+
 try {
   store = new Store({ schema });
   log.info('Store initialized, path:', store.path);
@@ -69,11 +82,42 @@ try {
     log.info('Store recovered successfully');
   } catch (retryError) {
     log.error('Critical: Failed to recover store:', retryError);
-    // 最后的手段：创建一个内存中的 store polyfill 或者再次抛出
-    // 为了防止应用完全无法启动，我们可以抛出更明确的错误
-    throw new Error(`Critical Store Initialization Failure: ${retryError.message}`);
+    // 创建一个内存fallback store，确保应用可以继续运行
+    log.warn('Using in-memory fallback store');
+    
+    // 使用默认值初始化内存存储
+    const defaultData = {};
+    Object.keys(schema).forEach(key => {
+      if (schema[key].default !== undefined) {
+        defaultData[key] = schema[key].default;
+      }
+    });
+    
+    const memoryStore = {
+      data: defaultData,
+      get(key) { 
+        return this.data[key] !== undefined ? this.data[key] : (schema[key]?.default || null);
+      },
+      set(key, value) { this.data[key] = value; },
+      clear() { 
+        this.data = {};
+        // 重置为默认值
+        Object.keys(schema).forEach(k => {
+          if (schema[k].default !== undefined) {
+            this.data[k] = schema[k].default;
+          }
+        });
+      },
+      get size() { return Object.keys(this.data).length; },
+      get store() { return this.data; },
+      path: 'memory'
+    };
+    store = memoryStore;
   }
 }
+
+// 防抖动计时器
+let saveWindowStateTimer = null;
 
 // 保存窗口状态
 function saveWindowState(window) {
@@ -84,33 +128,40 @@ function saveWindowState(window) {
     return;
   }
 
-  try {
-    const bounds = window.getBounds();
-    const isMaximized = window.isMaximized();
-    const isMinimized = window.isMinimized();
-    const isFullScreen = window.isFullScreen();
-
-    log.debug('Current window state:', {
-      bounds,
-      isMaximized,
-      isMinimized,
-      isFullScreen
-    });
-
-    store.set('windowBounds', bounds);
-    store.set('windowMaximized', isMaximized);
-    
-    log.info('Window state saved successfully:', {
-      x: bounds.x,
-      y: bounds.y,
-      width: bounds.width,
-      height: bounds.height,
-      maximized: isMaximized
-    });
-  } catch (error) {
-    log.error('Failed to save window state:', error);
-    log.error('Error stack:', error.stack);
+  // 清除之前的定时器，实现防抖动
+  if (saveWindowStateTimer) {
+    clearTimeout(saveWindowStateTimer);
   }
+
+  saveWindowStateTimer = setTimeout(() => {
+    try {
+      const bounds = window.getBounds();
+      const isMaximized = window.isMaximized();
+      const isMinimized = window.isMinimized();
+      const isFullScreen = window.isFullScreen();
+
+      log.debug('Current window state:', {
+        bounds,
+        isMaximized,
+        isMinimized,
+        isFullScreen
+      });
+
+      store.set('windowBounds', bounds);
+      store.set('windowMaximized', isMaximized);
+      
+      log.info('Window state saved successfully:', {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        maximized: isMaximized
+      });
+    } catch (error) {
+      log.error('Failed to save window state:', error);
+      log.error('Error stack:', error.stack);
+    }
+  }, 500); // 500ms防抖动
 }
 
 // 恢复窗口状态
@@ -129,8 +180,19 @@ function restoreWindowState(window) {
     log.debug('Stored window state:', { bounds, isMaximized });
 
     if (bounds) {
-      log.debug(`Setting window bounds: ${bounds.width}x${bounds.height} at (${bounds.x}, ${bounds.y})`);
-      window.setBounds(bounds);
+      const display = screen.getPrimaryDisplay();
+      const { workArea } = display || {};
+
+      let safeBounds = bounds;
+      if (workArea) {
+        // Clamp to visible work area to避免离屏
+        const clampedX = Math.min(Math.max(bounds.x, workArea.x), workArea.x + workArea.width - Math.max(bounds.width, 100));
+        const clampedY = Math.min(Math.max(bounds.y, workArea.y), workArea.y + workArea.height - Math.max(bounds.height, 100));
+        safeBounds = { ...bounds, x: clampedX, y: clampedY };
+      }
+
+      log.debug(`Setting window bounds: ${safeBounds.width}x${safeBounds.height} at (${safeBounds.x}, ${safeBounds.y})`);
+      window.setBounds(safeBounds);
       log.info('Window bounds restored');
     } else {
       log.debug('No stored bounds found, using defaults');
@@ -155,7 +217,7 @@ function getPreferences() {
   log.debug('Function: getPreferences() called');
   
   try {
-    const preferences = store.get('preferences');
+    const preferences = sanitizePreferences(store.get('preferences'));
     log.debug('Preferences retrieved:', JSON.stringify(preferences));
     return preferences;
   } catch (error) {
@@ -170,7 +232,7 @@ function setPreference(key, value) {
   log.debug(`Function: setPreference("${key}", "${value}") called`);
   
   try {
-    const preferences = store.get('preferences');
+    const preferences = sanitizePreferences(store.get('preferences'));
     const oldValue = preferences[key];
     
     preferences[key] = value;
@@ -210,5 +272,12 @@ module.exports = {
   restoreWindowState,
   getPreferences,
   setPreference,
-  resetSettings
+  resetSettings,
+  flushWindowState: () => {
+    // 立即保存，无防抖动，用于应用退出时
+    if (saveWindowStateTimer) {
+      clearTimeout(saveWindowStateTimer);
+      saveWindowStateTimer = null;
+    }
+  }
 };

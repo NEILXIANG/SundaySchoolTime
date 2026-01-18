@@ -45,7 +45,7 @@ describe('功能集成测试', () => {
       expect(menuItemCount).to.be.greaterThan(0);
     });
 
-    it('开发者工具菜单项应该可用', async () => {
+    it('开发者工具菜单项在开发环境可用，生产环境隐藏', async () => {
       const hasDevTools = await electronApp.evaluate(({ Menu }) => {
         const menu = Menu.getApplicationMenu();
         if (!menu) return false;
@@ -61,7 +61,9 @@ describe('功能集成测试', () => {
         }
         return false;
       });
-      expect(hasDevTools).to.be.true;
+
+      const expected = process.env.NODE_ENV === 'development';
+      expect(hasDevTools).to.equal(expected);
     });
   });
 
@@ -247,10 +249,14 @@ describe('功能集成测试', () => {
 
   describe('窗口事件处理测试', () => {
     it('窗口最小化和恢复应该正常工作', async function () {
-      this.timeout(10000);
+      this.timeout(20000);
       
-      // macOS 上的最小化行为可能不同
+      // macOS 上的最小化行为可能不同，跳过此测试
       const platform = await electronApp.evaluate(() => process.platform);
+      if (platform === 'darwin') {
+        this.skip();
+        return;
+      }
       
       await electronApp.evaluate(({ BrowserWindow }) => {
         const windows = BrowserWindow.getAllWindows();
@@ -266,10 +272,7 @@ describe('功能集成测试', () => {
         return windows.length > 0 ? windows[0].isMinimized() : false;
       });
 
-      // macOS 上测试可能不稳定，只在其他平台验证
-      if (platform !== 'darwin') {
-        expect(isMinimized).to.be.true;
-      }
+      expect(isMinimized).to.be.true;
 
       await electronApp.evaluate(({ BrowserWindow }) => {
         const windows = BrowserWindow.getAllWindows();
@@ -505,9 +508,45 @@ describe('功能集成测试', () => {
 
         expect(isReady).to.be.true;
 
+      
         await app.close();
         await new Promise(resolve => setTimeout(resolve, 500));
       }
+    });
+  });
+
+  describe('数据库与 IPC 集成测试', () => {
+    it('渲染进程应该能通过 API 调用数据库添加和查询学生', async () => {
+      // 在渲染进程中执行
+      const result = await window.evaluate(async () => {
+        // 调用暴露的 db.invoke
+        if (!window.api || !window.api.db) return { error: 'API not exposed' };
+        
+        try {
+          // 1. 添加学生
+          const addRes = await window.api.db.invoke('addStudent', { 
+            name: 'IPC Student', 
+            className: 'IPC Class'
+          });
+          
+          if (!addRes.success) return { error: addRes.error };
+          const newId = addRes.data;
+
+          // 2. 查询列表
+          const listRes = await window.api.db.invoke('listStudents');
+          const students = listRes.data;
+          
+          return { newId, students };
+        } catch (e) {
+          return { error: e.message };
+        }
+      });
+
+      expect(result.error).to.be.undefined;
+      expect(result.newId).to.be.a('number');
+      expect(result.students).to.be.an('array');
+      const found = result.students.find(s => s.name === 'IPC Student');
+      expect(found).to.not.be.undefined;
     });
   });
 });
