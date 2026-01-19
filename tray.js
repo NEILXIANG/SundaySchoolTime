@@ -1,7 +1,9 @@
 const { Menu, Tray, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const log = require('electron-log');
+const { getLogger } = require('./logger');
+
+const log = getLogger('tray');
 
 let tray = null;
 

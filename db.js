@@ -1,8 +1,9 @@
 const path = require('path');
 const fs = require('fs');
-const log = require('electron-log');
+const { getLogger } = require('./logger');
 const Database = require('better-sqlite3');
 
+const log = getLogger('db');
 let db;
 
 // 统一时间戳为毫秒。如果传入秒级时间戳（常见于外部接口），自动转换为毫秒。
@@ -37,6 +38,7 @@ function getDbPath() {
 
 function closeDb() {
   if (db) {
+    log.info('Closing database connection');
     db.close();
     db = null;
   }
@@ -46,6 +48,7 @@ function initDb() {
   if (db) return db;
 
   const dbPath = getDbPath();
+  log.info('Initializing database', { dbPath });
   db = new Database(dbPath);
 
   // 更好的一致性与性能
@@ -114,7 +117,7 @@ function initDb() {
       runMigrations(db, currentVersion, targetVersion);
     }
   } catch (err) {
-    log.error('Database migration failed:', err);
+    log.error('Database migration failed', err);
     // 不抛出错误，以免阻断应用启动
   }
 
@@ -123,6 +126,7 @@ function initDb() {
 
 // 数据库迁移执行函数
 function runMigrations(db, fromVersion, toVersion) {
+  log.info('Running database migrations', { fromVersion, toVersion });
   const migrations = {
     0: () => {
       // 版本0到版本1：添加联系人字段
@@ -134,6 +138,7 @@ function runMigrations(db, fromVersion, toVersion) {
         db.prepare('ALTER TABLE Student ADD COLUMN phone TEXT').run();
         db.prepare('ALTER TABLE Student ADD COLUMN wechat TEXT').run();
         db.prepare('ALTER TABLE Student ADD COLUMN whatsapp TEXT').run();
+        log.info('Migration 0->1 applied: added contact fields');
       }
       db.pragma('user_version = 1');
     }
@@ -150,14 +155,26 @@ function runMigrations(db, fromVersion, toVersion) {
 
 // Student CRUD
 function addStudent({ name, className = '', tags = '', guardianName = '', phone = '', wechat = '', whatsapp = '' }) {
+  const startTime = Date.now();
+  log.debug('addStudent called', { name, className, tags });
+  
   if (!name || !name.trim()) {
+    log.error('addStudent failed: name is required');
     throw new Error('Student name is required');
   }
-  const stmt = initDb().prepare(
-    'INSERT INTO Student (name, className, tags, guardianName, phone, wechat, whatsapp, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  );
-  const info = stmt.run(name.trim(), className, tags, guardianName, phone, wechat, whatsapp, Date.now());
-  return info.lastInsertRowid;
+  
+  try {
+    const stmt = initDb().prepare(
+      'INSERT INTO Student (name, className, tags, guardianName, phone, wechat, whatsapp, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    const info = stmt.run(name.trim(), className, tags, guardianName, phone, wechat, whatsapp, Date.now());
+    const elapsed = Date.now() - startTime;
+    log.info('Student added', { id: info.lastInsertRowid, name: name.trim(), elapsed });
+    return info.lastInsertRowid;
+  } catch (error) {
+    log.error('addStudent failed', error);
+    throw error;
+  }
 }
 
 function listStudents({ limit = null, offset = 0 } = {}) {
@@ -206,34 +223,56 @@ function getStudentById(id) {
 }
 
 function updateStudent(id, { name, className, tags, guardianName, phone, wechat, whatsapp }) {
+  const startTime = Date.now();
+  log.debug('updateStudent called', { id, name, className, tags });
+  
   const current = getStudentById(id);
   if (!current) {
+    log.error('updateStudent failed: student not found', { id });
     throw new Error('Student not found');
   }
 
   const nextName = name !== undefined ? name : current.name;
   if (!nextName || !nextName.trim()) {
+    log.error('updateStudent failed: name is required', { id });
     throw new Error('Student name is required');
   }
 
-  const stmt = initDb().prepare(
-    'UPDATE Student SET name = ?, className = ?, tags = ?, guardianName = ?, phone = ?, wechat = ?, whatsapp = ? WHERE id = ?'
-  );
+  try {
+    const stmt = initDb().prepare(
+      'UPDATE Student SET name = ?, className = ?, tags = ?, guardianName = ?, phone = ?, wechat = ?, whatsapp = ? WHERE id = ?'
+    );
 
-  return stmt.run(
-    nextName.trim(),
-    className !== undefined ? className : current.className,
-    tags !== undefined ? tags : current.tags,
-    guardianName !== undefined ? guardianName : current.guardianName,
-    phone !== undefined ? phone : current.phone,
-    wechat !== undefined ? wechat : current.wechat,
-    whatsapp !== undefined ? whatsapp : current.whatsapp,
-    id
-  ).changes;
+    const changes = stmt.run(
+      nextName.trim(),
+      className !== undefined ? className : current.className,
+      tags !== undefined ? tags : current.tags,
+      guardianName !== undefined ? guardianName : current.guardianName,
+      phone !== undefined ? phone : current.phone,
+      wechat !== undefined ? wechat : current.wechat,
+      whatsapp !== undefined ? whatsapp : current.whatsapp,
+      id
+    ).changes;
+    
+    const elapsed = Date.now() - startTime;
+    log.info('Student updated', { id, changes, elapsed });
+    return changes;
+  } catch (error) {
+    log.error('updateStudent failed', error);
+    throw error;
+  }
 }
 
 function deleteStudent(id) {
-  return initDb().prepare('DELETE FROM Student WHERE id = ?').run(id).changes;
+  log.debug('deleteStudent called', { id });
+  try {
+    const changes = initDb().prepare('DELETE FROM Student WHERE id = ?').run(id).changes;
+    log.info('Student deleted', { id, changes });
+    return changes;
+  } catch (error) {
+    log.error('deleteStudent failed', error);
+    throw error;
+  }
 }
 
 // Photo CRUD
@@ -273,7 +312,9 @@ function addPhoto({ filePath, fileName = '', capturedAt = null }) {
   // 校验文件大小（最大10MB）
   const stats = fs.statSync(filePath);
   const maxSize = 10 * 1024 * 1024; // 10MB
+  log.debug('Photo file stats', { filePath, size: stats.size, ext });
   if (stats.size > maxSize) {
+    log.error('Photo file too large', { filePath, size: stats.size, maxSize });
     throw new Error(`File size exceeds maximum allowed size of ${maxSize / 1024 / 1024}MB`);
   }
 
@@ -288,14 +329,16 @@ function addPhoto({ filePath, fileName = '', capturedAt = null }) {
     const newPath = path.join(photosDir, newFileName);
     
     try {
+      log.debug('Copying photo file', { from: filePath, to: newPath });
       fs.copyFileSync(filePath, newPath);
       finalPath = newPath;
       // 如果没有传入 fileName，使用原始文件名
       if (!fileName) {
         fileName = path.basename(filePath);
       }
+      log.info('Photo file copied successfully', { newPath, size: stats.size });
     } catch (err) {
-      log.error('Failed to copy photo file:', err);
+      log.error('Failed to copy photo file', err);
       // 为了数据完整性，这里抛出错误更安全
       throw new Error(`Failed to import photo: ${err.message}`);
     }
@@ -314,6 +357,7 @@ function addPhoto({ filePath, fileName = '', capturedAt = null }) {
     'INSERT INTO Photo (filePath, fileName, capturedAt, createdAt) VALUES (?, ?, ?, ?)'
   );
   const info = stmt.run(finalPath, fileName, normalizedCapturedAt, Date.now());
+  log.info('Photo added to database', { id: info.lastInsertRowid, filePath: finalPath, fileName });
   return info.lastInsertRowid;
 }
 
@@ -374,21 +418,27 @@ function getPhotoById(id) {
 }
 
 function deletePhoto(id) {
+  log.debug('deletePhoto called', { id });
   const photo = getPhotoById(id);
   if (!photo) {
+    log.error('deletePhoto failed: photo not found', { id });
     throw new Error('Photo not found');
   }
   
   const changes = initDb().prepare('DELETE FROM Photo WHERE id = ?').run(id).changes;
+  log.info('Photo deleted from database', { id, changes });
   
   // 删除物理文件（如果存在）
   if (photo.filePath && fs.existsSync(photo.filePath)) {
     try {
       fs.unlinkSync(photo.filePath);
+      log.info('Photo file deleted', { filePath: photo.filePath });
     } catch (err) {
       // 记录错误但不阻断删除操作
-      log.warn('Failed to delete photo file:', photo.filePath, err);
+      log.warn('Failed to delete photo file', { filePath: photo.filePath, error: err.message });
     }
+  } else {
+    log.warn('Photo file not found or already deleted', { filePath: photo.filePath });
   }
   
   return changes;
@@ -520,6 +570,8 @@ function backupDatabase() {
   const db = initDb();
   const dbPath = getDbPath();
   const backupDir = path.join(getUserDataPath(), 'backups');
+
+  log.info('Starting database backup', { dbPath, backupDir });
   
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
@@ -532,7 +584,7 @@ function backupDatabase() {
     // 确保 WAL 日志被刷入主数据库文件后再复制
     db.pragma('wal_checkpoint(FULL)');
     fs.copyFileSync(dbPath, backupPath);
-    log.info('Database backup created:', backupPath);
+    log.info('Database backup created', { backupPath });
     
     // 清理旧备份，保留最近5个
     const backups = fs.readdirSync(backupDir)
@@ -547,13 +599,13 @@ function backupDatabase() {
     if (backups.length > 5) {
       backups.slice(5).forEach(backup => {
         fs.unlinkSync(backup.path);
-        log.info('Old backup removed:', backup.name);
+        log.info('Old backup removed', { name: backup.name });
       });
     }
     
     return backupPath;
   } catch (error) {
-    log.error('Database backup failed:', error);
+    log.error('Database backup failed', error);
     throw error;
   }
 }

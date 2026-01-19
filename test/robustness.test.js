@@ -3,6 +3,7 @@ const { expect } = require('chai');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { cleanupElectronApp, getHeadlessLaunchConfig } = require('./helpers');
 
 describe('系统鲁棒性与边界条件测试', () => {
     let electronApp;
@@ -11,10 +12,9 @@ describe('系统鲁棒性与边界条件测试', () => {
 
     // Helper to cleanup and setup
     const startApp = async () => {
-        electronApp = await electron.launch({
-            args: [path.join(__dirname, '..')],
-            env: { ...process.env, NODE_ENV: 'test' }
-        });
+        electronApp = await electron.launch(
+            getHeadlessLaunchConfig(path.join(__dirname, '..'))
+        );
         // 获取应用实际使用的 userData 路径
         userDataPath = await electronApp.evaluate(({ app }) => app.getPath('userData'));
         configPath = path.join(userDataPath, 'config.json');
@@ -22,10 +22,9 @@ describe('系统鲁棒性与边界条件测试', () => {
     };
 
     afterEach(async function() {
-        this.timeout(10000); // 增加关闭的超时时间
-        if (electronApp) {
-            await electronApp.close();
-        }
+        this.timeout(15000);
+        await cleanupElectronApp(electronApp);
+        electronApp = null;
     });
 
     describe('配置系统异常恢复', () => {

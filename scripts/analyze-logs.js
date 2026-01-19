@@ -39,7 +39,7 @@ function getLatestLogFile() {
   }
 
   const files = fs.readdirSync(logDir)
-    .filter(f => f.startsWith('main-') && f.endsWith('.log'))
+    .filter(f => (f.startsWith('main-') && f.endsWith('.log')) || (f.startsWith('structured-') && f.endsWith('.jsonl')))
     .map(f => ({
       name: f,
       path: path.join(logDir, f),
@@ -57,17 +57,39 @@ function getLatestLogFile() {
 
 // 解析日志行
 function parseLogLine(line) {
-  // 格式: [2026-01-17 10:29:30.123] [info] Message
-  const match = line.match(/^\[([^\]]+)\] \[([^\]]+)\] (.+)$/);
-  
-  if (!match) {
-    return null;
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      return {
+        timestamp: parsed.ts || parsed.timestamp || 'unknown',
+        level: parsed.level || 'info',
+        message: parsed.message || '',
+        scope: parsed.scope,
+        meta: parsed.meta,
+        sessionId: parsed.sessionId,
+        raw: line
+      };
+    } catch (error) {
+      return null;
+    }
   }
+
+  // 格式: [2026-01-17 10:29:30.123] [info] Message
+  const match = trimmed.match(/^\[([^\]]+)\] \[([^\]]+)\] (.+)$/);
+  if (!match) return null;
+
+  const message = match[3];
+  const scopeMatch = message.match(/^\[([^\]]+)\] \[pid:/);
+  const scope = scopeMatch ? scopeMatch[1] : undefined;
 
   return {
     timestamp: match[1],
     level: match[2],
-    message: match[3],
+    message,
+    scope,
     raw: line
   };
 }
@@ -94,7 +116,9 @@ function analyzeLogs(filePath) {
     errors: [],
     warnings: [],
     lifecycle: [],
-    performance: []
+    performance: [],
+    scopes: {},
+    sessions: {}
   };
 
   // 分析每一行
@@ -116,6 +140,14 @@ function analyzeLogs(filePath) {
       stats.info++;
     } else if (parsed.level === 'debug') {
       stats.debug++;
+    }
+
+    // 统计 scope / session
+    if (parsed.scope) {
+      stats.scopes[parsed.scope] = (stats.scopes[parsed.scope] || 0) + 1;
+    }
+    if (parsed.sessionId) {
+      stats.sessions[parsed.sessionId] = (stats.sessions[parsed.sessionId] || 0) + 1;
     }
 
     // 收集生命周期事件
@@ -144,7 +176,11 @@ function analyzeLogs(filePath) {
   if (stats.errors.length > 0) {
     console.log('🔴 错误详情:');
     stats.errors.forEach(err => {
-      console.log(`   行 ${err.line}: [${err.timestamp}] ${err.message}`);
+      const scopeLabel = err.scope ? ` [${err.scope}]` : '';
+      console.log(`   行 ${err.line}: [${err.timestamp}]${scopeLabel} ${err.message}`);
+      if (err.meta && err.meta.stack) {
+        console.log(`      Stack: ${String(err.meta.stack).split('\n')[0]}`);
+      }
     });
     console.log('');
   } else {
@@ -156,7 +192,8 @@ function analyzeLogs(filePath) {
   if (stats.warnings.length > 0) {
     console.log('🟡 警告详情:');
     stats.warnings.slice(0, 10).forEach(warn => {
-      console.log(`   行 ${warn.line}: [${warn.timestamp}] ${warn.message}`);
+      const scopeLabel = warn.scope ? ` [${warn.scope}]` : '';
+      console.log(`   行 ${warn.line}: [${warn.timestamp}]${scopeLabel} ${warn.message}`);
     });
     if (stats.warnings.length > 10) {
       console.log(`   ... 还有 ${stats.warnings.length - 10} 个警告`);
@@ -179,6 +216,32 @@ function analyzeLogs(filePath) {
     stats.performance.forEach(perf => {
       console.log(`   行 ${perf.line}: ${perf.message}`);
     });
+    console.log('');
+  }
+
+  // 打印组件分布
+  const scopeEntries = Object.entries(stats.scopes).sort((a, b) => b[1] - a[1]);
+  if (scopeEntries.length > 0) {
+    console.log('🧩 组件分布:');
+    scopeEntries.slice(0, 10).forEach(([scope, count]) => {
+      console.log(`   ${scope}: ${count}`);
+    });
+    if (scopeEntries.length > 10) {
+      console.log(`   ... 还有 ${scopeEntries.length - 10} 个组件`);
+    }
+    console.log('');
+  }
+
+  // 会话统计
+  const sessionEntries = Object.entries(stats.sessions).sort((a, b) => b[1] - a[1]);
+  if (sessionEntries.length > 0) {
+    console.log('🧭 会话统计:');
+    sessionEntries.slice(0, 5).forEach(([sessionId, count]) => {
+      console.log(`   ${sessionId}: ${count}`);
+    });
+    if (sessionEntries.length > 5) {
+      console.log(`   ... 还有 ${sessionEntries.length - 5} 个会话`);
+    }
     console.log('');
   }
 

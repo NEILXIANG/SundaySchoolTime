@@ -1,0 +1,11 @@
+{
+  "bail": false,
+  "timeout": 30000,
+  "reporter": "spec",
+  "exit": true,
+  "recursive": true,
+  "spec": "test/**/*.test.js",
+  "node-option": [
+    "max-old-space-size=4096"
+  ]
+}

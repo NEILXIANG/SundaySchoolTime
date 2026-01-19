@@ -2,6 +2,7 @@ const { _electron: electron } = require('playwright');
 const { expect } = require('chai');
 const path = require('path');
 const fs = require('fs');
+const { cleanupElectronApp, getHeadlessLaunchConfig, hideWindow } = require('./helpers');
 
 describe('功能集成测试', () => {
   let electronApp;
@@ -9,22 +10,18 @@ describe('功能集成测试', () => {
 
   beforeEach(async function () {
     this.timeout(30000);
-    electronApp = await electron.launch({
-      args: [path.join(__dirname, '..')],
-      env: {
-        ...process.env,
-        NODE_ENV: 'test'
-      }
-    });
+    electronApp = await electron.launch(
+      getHeadlessLaunchConfig(path.join(__dirname, '..'))
+    );
     window = await electronApp.firstWindow();
     await window.waitForLoadState('domcontentloaded');
+    await hideWindow(window);  // 隐藏窗口减少干扰
   });
 
   afterEach(async function () {
-    this.timeout(10000);
-    if (electronApp) {
-      await electronApp.close();
-    }
+    this.timeout(15000);
+    await cleanupElectronApp(electronApp);
+    electronApp = null;
   });
 
   describe('菜单功能集成测试', () => {

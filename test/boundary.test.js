@@ -2,6 +2,7 @@ const { _electron: electron } = require('playwright');
 const { expect } = require('chai');
 const path = require('path');
 const fs = require('fs');
+const { cleanupElectronApp, getHeadlessLaunchConfig, hideWindow } = require('./helpers');
 
 describe('边界条件和极端情况测试', () => {
     let electronApp;
@@ -9,19 +10,18 @@ describe('边界条件和极端情况测试', () => {
 
     beforeEach(async function () {
         this.timeout(30000);
-        electronApp = await electron.launch({
-            args: [path.join(__dirname, '..')],
-            env: { ...process.env, NODE_ENV: 'test' }
-        });
+        electronApp = await electron.launch(
+            getHeadlessLaunchConfig(path.join(__dirname, '..'))
+        );
         window = await electronApp.firstWindow();
         await window.waitForLoadState('domcontentloaded');
+        await hideWindow(window);
     });
 
     afterEach(async function () {
-        this.timeout(10000);
-        if (electronApp) {
-            await electronApp.close();
-        }
+        this.timeout(15000);
+        await cleanupElectronApp(electronApp);
+        electronApp = null;
     });
 
     async function dbCall(method, ...args) {

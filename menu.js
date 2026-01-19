@@ -1,6 +1,8 @@
 const { Menu } = require('electron');
 const { app } = require('electron');
-const log = require('electron-log');
+const { getLogger } = require('./logger');
+
+const log = getLogger('menu');
 
 function createMenu(mainWindow) {
   try {

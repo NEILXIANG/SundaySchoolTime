@@ -1,6 +1,8 @@
 const Store = require('electron-store');
-const log = require('electron-log');
+const { getLogger } = require('./logger');
 const { screen } = require('electron');
+
+const log = getLogger('store');
 
 log.debug('Initializing electron-store...');
 

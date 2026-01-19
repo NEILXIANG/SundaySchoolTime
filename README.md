@@ -147,7 +147,11 @@ npm test
 - ✅ 无外部框架依赖
 
 #### 开发工具
-- ✅ 日志系统（electron-log）with 轮转和分级
+- ✅ 统一日志系统（基于electron-log）
+  - 会话跟踪与组件作用域隔离
+  - 结构化JSONL输出（便于AI分析）
+  - 日志分析与查询工具
+  - 详见 [日志使用指南](LOG_GUIDE.md) 和 [AI调试指南](AI_DEBUG_GUIDE.md)
 - ✅ 开发模式热重载（electron-reloader）
 - ✅ DevTools 自动打开（开发模式）
 - ✅ 全局错误处理和追踪

@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
-const log = require('electron-log');
+const { initLogger, getLogger, getRawLogger, getSessionId } = require('./logger');
 const { autoUpdater } = require('electron-updater');
 const { createMenu } = require('./menu');
 const { createTray, destroyTray } = require('./tray');
@@ -12,23 +12,10 @@ const isDev = process.env.NODE_ENV === 'development';
 const isMac = process.platform === 'darwin';
 
 // 初始化日志系统
-log.initialize();
-
-// 配置日志
-log.transports.file.level = isDev ? 'debug' : 'info';
-log.transports.file.maxSize = 10 * 1024 * 1024; // 10MB
-log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
-log.transports.console.level = isDev ? 'debug' : 'warn';
-log.transports.console.format = '[{h}:{i}:{s}.{ms}] [{level}] {text}';
-
-// 日志轮转：旧日志文件管理
-log.transports.file.resolvePath = () => {
-  const date = new Date();
-  const dateStr = date.toISOString().split('T')[0];
-  return path.join(log.transports.file.getFile().dir, `main-${dateStr}.log`);
-};
-
-autoUpdater.logger = log;
+initLogger({ processType: 'main', appVersion: app.getVersion(), logFilePrefix: 'main' });
+const log = getLogger('main');
+const rawLog = getRawLogger();
+autoUpdater.logger = rawLog;
 
 // 启动日志：记录系统信息
 log.info('='.repeat(80));
@@ -43,6 +30,7 @@ log.info('Chrome version:', process.versions.chrome);
 log.info('App version:', app.getVersion());
 log.info('User data path:', app.getPath('userData'));
 log.info('Logs path:', app.getPath('logs'));
+log.info('Session ID:', getSessionId());
 log.info('='.repeat(80));
 
 let mainWindow;
@@ -50,8 +38,8 @@ let tray = null;
 
 // 全局错误处理
 process.on('uncaughtException', (error) => {
-  log.error('Uncaught Exception:', error);
-  log.error('Stack trace:', error.stack);
+  log.error('Uncaught Exception', error);
+  log.error('Stack trace', error && error.stack ? error.stack : 'N/A');
   
   // 在开发环境中立即退出，生产环境可能需要更优雅的处理
   if (isDev) {
@@ -60,8 +48,8 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  log.error('Unhandled Rejection at:', promise);
-  log.error('Reason:', reason);
+  log.error('Unhandled Rejection at', { promise });
+  log.error('Reason', reason);
   
   if (reason instanceof Error) {
     log.error('Stack trace:', reason.stack);
@@ -70,12 +58,12 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // 监听子进程崩溃事件
 app.on('render-process-gone', (event, webContents, details) => {
-  log.error(`Renderer process gone: ${details.reason}, exitCode: ${details.exitCode}`);
-  log.error(`WebContents ID: ${webContents.id}, URL: ${webContents.getURL()}`);
+  log.error('Renderer process gone', details);
+  log.error('WebContents details', { id: webContents.id, url: webContents.getURL() });
 });
 
 app.on('child-process-gone', (event, details) => {
-  log.error(`Child process gone: ${details.type}, reason: ${details.reason}, exitCode: ${details.exitCode}`);
+  log.error('Child process gone', details);
   // 如果是 GPU 进程崩溃，通常 Electron 会自动重启，但服务进程可能需要手动处理
   if (details.type === 'Utility' || details.type === 'Zygote') {
     log.warn('Critical child process crashed');
@@ -84,10 +72,16 @@ app.on('child-process-gone', (event, details) => {
 
 // 处理来自渲染进程的日志
 ipcMain.on('log-message', (event, level, message, ...args) => {
-  if (log[level]) {
-    log[level](`[Renderer] ${message}`, ...args);
+  const rendererLog = getLogger('renderer');
+  const levelName = typeof level === 'string' ? level : 'info';
+  const payload = {
+    senderId: event.sender?.id,
+    url: event.sender?.getURL?.()
+  };
+  if (rendererLog[levelName]) {
+    rendererLog[levelName](message, payload, ...args);
   } else {
-    log.info(`[Renderer] ${message}`, ...args);
+    rendererLog.info(message, payload, ...args);
   }
 });
 
@@ -162,11 +156,10 @@ function createWindow() {
   mainWindow.loadFile('index.html')
     .then(() => {
       const loadTime = Date.now() - startTime;
-      log.info(`index.html loaded successfully in ${loadTime}ms`);
+      log.info('index.html loaded successfully', { loadTime });
     })
     .catch((error) => {
-      log.error('Failed to load index.html:', error);
-      log.error('Error stack:', error.stack);
+      log.error('Failed to load index.html', error);
       log.error('Quitting application due to load failure');
       app.quit();
     });
@@ -174,7 +167,7 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     if (mainWindow) {
       const totalStartTime = Date.now() - startTime;
-      log.info(`Window ready to show (total: ${totalStartTime}ms)`);
+      log.info('Window ready to show', { totalStartTime });
       mainWindow.show();
       log.info('Main window shown to user');
       
@@ -351,15 +344,22 @@ app.whenReady().then(() => {
       }
 
       if (typeof db[method] === 'function') {
-        log.debug(`IPC Call: db.${method}`, args);
+        const ipcLog = getLogger('ipc');
+        const startTime = Date.now();
+        ipcLog.debug('db call started', { method, argCount: args.length });
+        
         // 大部分 db 操作是同步的，但通过 invoke 调用 wrap 成 promise
         const result = db[method](...args);
+        const elapsed = Date.now() - startTime;
+        
+        ipcLog.info('db call completed', { method, elapsed, resultType: typeof result });
         return { success: true, data: result };
       } else {
         throw new Error(`Method ${method} not found in db module`);
       }
     } catch (error) {
-      log.error(`IPC Call failed: db.${method}`, error);
+      const ipcLog = getLogger('ipc');
+      ipcLog.error('db call failed', { method, error: error.message, stack: error.stack });
       return { success: false, error: error.message };
     }
   });
